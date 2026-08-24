@@ -5448,6 +5448,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         coalesce: bool = True,
         allow_exact_matches: bool = True,
         check_sortedness: bool = True,
+        nulls_equal: bool = False,
     ) -> LazyFrame:
         """
         Perform an asof join.
@@ -5550,6 +5551,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             will error. Currently, the `in-memory` engine cannot check the sortedness
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
+        nulls_equal
+            Treat null values as equal when matching on the `by` columns. By default,
+            null values in the `by` columns do not match. Has no effect when no `by`
+            columns are specified.
 
         See Also
         --------
@@ -5827,6 +5832,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 coalesce=coalesce,
                 allow_eq=allow_exact_matches,
                 check_sortedness=check_sortedness,
+                nulls_equal=nulls_equal,
             )
         )
 

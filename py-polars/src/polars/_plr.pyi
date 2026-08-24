@@ -1071,6 +1071,7 @@ class PyLazyFrame:
         coalesce: bool,
         allow_eq: bool,
         check_sortedness: bool,
+        nulls_equal: bool,
     ) -> PyLazyFrame: ...
     def join(
         self,

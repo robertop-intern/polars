@@ -6,7 +6,8 @@ import itertools
 import math
 import random
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import hypothesis.strategies as st
@@ -20,7 +21,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
-    from polars._typing import AsofJoinStrategy, PolarsIntegerType
+    from polars._typing import AsofJoinStrategy, PolarsDataType, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -147,7 +148,8 @@ def test_asof_join_schema_5684() -> None:
     )
 
 
-def test_join_asof_mismatched_dtypes() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_asof_mismatched_dtypes(nulls_equal: bool) -> None:
     # test 'on' dtype mismatch
     df1 = pl.DataFrame(
         {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
@@ -159,7 +161,7 @@ def test_join_asof_mismatched_dtypes() -> None:
     with pytest.raises(
         pl.exceptions.SchemaError, match="datatypes of join keys don't match"
     ):
-        df1.join_asof(df2, on="a", strategy="forward")
+        df1.join_asof(df2, on="a", strategy="forward", nulls_equal=nulls_equal)
 
     # test 'by' dtype mismatch
     df1 = pl.DataFrame(
@@ -176,14 +178,16 @@ def test_join_asof_mismatched_dtypes() -> None:
             "value": [0, 0, None, None, 2, None, 1, None],
         }
     )
-
     with pytest.raises(
         pl.exceptions.ComputeError, match="mismatching dtypes in 'by' parameter"
     ):
-        df1.join_asof(df2, on="time", by="group", strategy="forward")
+        df1.join_asof(
+            df2, on="time", by="group", strategy="forward", nulls_equal=nulls_equal
+        )
 
 
-def test_join_asof_floats() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_asof_floats(nulls_equal: bool) -> None:
     df1 = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["lrow1", "lrow2", "lrow3"]})
     df2 = pl.DataFrame({"a": [0.59, 1.49, 2.89], "b": ["rrow1", "rrow2", "rrow3"]})
 
@@ -207,9 +211,9 @@ def test_join_asof_floats() -> None:
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
     ).with_columns(pl.col("val").alias("b").set_sorted())
-    assert df1.set_sorted("b").join_asof(df2, on=pl.col("b"), by="c").to_dict(
-        as_series=False
-    ) == {
+    assert df1.set_sorted("b").join_asof(
+        df2, on=pl.col("b"), by="c", nulls_equal=nulls_equal
+    ).to_dict(as_series=False) == {
         "b": [
             0.0,
             0.8333333333333334,
@@ -224,59 +228,100 @@ def test_join_asof_floats() -> None:
     }
 
 
-def test_join_asof_tolerance() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("tolerance", [None, 3])
+def test_join_asof_float_by_special_values(
+    nulls_equal: bool, tolerance: int | None
+) -> None:
+    # Assert that two NaNs are equal and that +0.0 and -0.0 are equal in by join
+    nan = float("nan")
+    left = pl.DataFrame(
+        {
+            "g": pl.Series([nan, -0.0, None], dtype=pl.Float64),
+            "t": [10.0, 10.0, 10.0],
+            "lv": ["L_nan", "L_neg0", "L_null"],
+        }
+    ).sort("g", "t")
+    right = pl.DataFrame(
+        {
+            "g": pl.Series([nan, 0.0, None], dtype=pl.Float64),
+            "t": [8.0, 2.0, 8.0],
+            "rv": ["R_nan", "R_pos0", "R_null"],
+        }
+    ).sort("g", "t")
+
+    result = left.join_asof(
+        right, on="t", by="g", nulls_equal=nulls_equal, tolerance=tolerance
+    )
+
+    expected = {
+        "L_nan": "R_nan",
+        "L_neg0": "R_pos0" if tolerance is None else None,
+        "L_null": "R_null" if nulls_equal else None,
+    }
+    assert dict(zip(result["lv"], result["rv"], strict=True)) == expected
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_join_asof_tolerance(nulls_equal: bool) -> None:
     df_trades = pl.DataFrame(
         {
             "time": [
                 datetime(2020, 1, 1, 9, 0, 1),
                 datetime(2020, 1, 1, 9, 0, 1),
                 datetime(2020, 1, 1, 9, 0, 3),
+                datetime(2020, 1, 1, 9, 0, 3),
                 datetime(2020, 1, 1, 9, 0, 6),
             ],
-            "stock": ["A", "B", "B", "C"],
-            "trade": [101, 299, 301, 500],
+            "stock": ["A", "B", "B", None, "C"],
+            "trade": [101, 299, 301, 777, 500],
         }
-    ).set_sorted("time")
+    ).sort("stock", "time")
 
     df_quotes = pl.DataFrame(
         {
             "time": [
                 datetime(2020, 1, 1, 9, 0, 0),
                 datetime(2020, 1, 1, 9, 0, 2),
+                datetime(2020, 1, 1, 9, 0, 2),
                 datetime(2020, 1, 1, 9, 0, 4),
                 datetime(2020, 1, 1, 9, 0, 6),
             ],
-            "stock": ["A", "B", "C", "A"],
-            "quote": [100, 300, 501, 102],
+            "stock": ["A", "B", None, "C", "A"],
+            "quote": [100, 300, 999, 501, 102],
         }
-    ).set_sorted("time")
+    ).sort("stock", "time")
+
+    null_quote = 999 if nulls_equal else None
 
     assert df_trades.join_asof(
-        df_quotes, on="time", by="stock", tolerance="2s"
-    ).to_dict(as_series=False) == {
+        df_quotes, on="time", by="stock", tolerance="2s", nulls_equal=nulls_equal
+    ).sort("trade").to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 1),
             datetime(2020, 1, 1, 9, 0, 1),
             datetime(2020, 1, 1, 9, 0, 3),
             datetime(2020, 1, 1, 9, 0, 6),
+            datetime(2020, 1, 1, 9, 0, 3),
         ],
-        "stock": ["A", "B", "B", "C"],
-        "trade": [101, 299, 301, 500],
-        "quote": [100, None, 300, 501],
+        "stock": ["A", "B", "B", "C", None],
+        "trade": [101, 299, 301, 500, 777],
+        "quote": [100, None, 300, 501, null_quote],
     }
 
     assert df_trades.join_asof(
-        df_quotes, on="time", by="stock", tolerance="1s"
-    ).to_dict(as_series=False) == {
+        df_quotes, on="time", by="stock", tolerance="1s", nulls_equal=nulls_equal
+    ).sort("trade").to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 1),
             datetime(2020, 1, 1, 9, 0, 1),
             datetime(2020, 1, 1, 9, 0, 3),
             datetime(2020, 1, 1, 9, 0, 6),
+            datetime(2020, 1, 1, 9, 0, 3),
         ],
-        "stock": ["A", "B", "B", "C"],
-        "trade": [101, 299, 301, 500],
-        "quote": [100, None, 300, None],
+        "stock": ["A", "B", "B", "C", None],
+        "trade": [101, 299, 301, 500, 777],
+        "quote": [100, None, 300, None, null_quote],
     }
 
     for invalid_tolerance, match in [
@@ -289,6 +334,7 @@ def test_join_asof_tolerance() -> None:
                 on="time",
                 by="stock",
                 tolerance=invalid_tolerance,  # type: ignore[arg-type]
+                nulls_equal=nulls_equal,
             )
 
 
@@ -446,37 +492,199 @@ def test_join_asof_projection_7481() -> None:
     }
 
 
-def test_asof_join_sorted_by_group(capsys: Any) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_asof_join_sorted_by_group(capsys: Any, nulls_equal: bool) -> None:
     df1 = pl.DataFrame(
         {
-            "key": ["a", "a", "a", "b", "b", "b"],
-            "asof_key": [2.0, 1.0, 3.0, 1.0, 2.0, 3.0],
-            "a": [102, 101, 103, 104, 105, 106],
+            "key": ["a", "a", "a", "b", "b", "b", None, None],
+            "asof_key": [2.0, 1.0, 3.0, 1.0, 2.0, 3.0, 2.0, 1.0],
+            "a": [102, 101, 103, 104, 105, 106, 108, 107],
         }
     ).sort(by=["key", "asof_key"])
 
     df2 = pl.DataFrame(
         {
-            "key": ["a", "a", "a", "b", "b", "b"],
-            "asof_key": [0.9, 1.9, 2.9, 0.9, 1.9, 2.9],
-            "b": [201, 202, 203, 204, 205, 206],
+            "key": ["a", "a", "a", "b", "b", "b", None, None],
+            "asof_key": [0.9, 1.9, 2.9, 0.9, 1.9, 2.9, 0.9, 1.9],
+            "b": [201, 202, 203, 204, 205, 206, 207, 208],
         }
     ).sort(by=["key", "asof_key"])
 
+    null_b = [207, 208] if nulls_equal else [None, None]
     expected = pl.DataFrame(
         [
-            pl.Series("key", ["a", "a", "a", "b", "b", "b"], dtype=pl.String),
-            pl.Series("asof_key", [1.0, 2.0, 3.0, 1.0, 2.0, 3.0], dtype=pl.Float64),
-            pl.Series("a", [101, 102, 103, 104, 105, 106], dtype=pl.Int64),
-            pl.Series("b", [201, 202, 203, 204, 205, 206], dtype=pl.Int64),
+            pl.Series(
+                "key", [None, None, "a", "a", "a", "b", "b", "b"], dtype=pl.String
+            ),
+            pl.Series(
+                "asof_key",
+                [1.0, 2.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
+                dtype=pl.Float64,
+            ),
+            pl.Series("a", [107, 108, 101, 102, 103, 104, 105, 106], dtype=pl.Int64),
+            pl.Series("b", [*null_b, 201, 202, 203, 204, 205, 206], dtype=pl.Int64),
         ]
     )
 
-    out = df1.join_asof(df2, on="asof_key", by="key")
+    out = df1.join_asof(df2, on="asof_key", by="key", nulls_equal=nulls_equal)
     assert_frame_equal(out, expected)
 
     _, err = capsys.readouterr()
     assert "is not explicitly sorted" not in err
+
+
+@pytest.mark.parametrize(
+    ("by_dtype", "by_values"),
+    [
+        (pl.Int8, [1, 2]),
+        (pl.Int16, [1, 2]),
+        (pl.Int32, [1, 2]),
+        (pl.Int64, [1, 2]),
+        (pl.Int128, [1, 2]),
+        (pl.UInt8, [1, 2]),
+        (pl.UInt16, [1, 2]),
+        (pl.UInt32, [1, 2]),
+        (pl.UInt64, [1, 2]),
+        (pl.UInt128, [1, 2]),
+        (pl.Float16, [1.0, 2.0]),
+        (pl.Float32, [1.0, 2.0]),
+        (pl.Float64, [1.0, 2.0]),
+        (pl.Decimal(10, 0), [Decimal("1"), Decimal("2")]),
+        (pl.Boolean, [False, True]),
+        (pl.String, ["a", "b"]),
+        (pl.Binary, [b"a", b"b"]),
+        (pl.Categorical, ["a", "b"]),
+        (pl.Enum(["a", "b"]), ["a", "b"]),
+        (pl.Date, [date(2020, 1, 1), date(2020, 1, 2)]),
+        (pl.Datetime, [datetime(2020, 1, 1), datetime(2020, 1, 2)]),
+        (pl.Time, [time(1), time(2)]),
+        (pl.Duration, [timedelta(days=1), timedelta(days=2)]),
+    ],
+)
+def test_join_asof_nulls_by_dtype(
+    by_dtype: PolarsDataType, by_values: list[Any]
+) -> None:
+    # Assert that nulls are grouped correctly for each dtype
+    lf_left = pl.LazyFrame(
+        data=[
+            (None, datetime(2023, 1, 1)),
+            (None, datetime(2024, 1, 2)),
+            (None, datetime(2024, 1, 4)),
+            (by_values[0], datetime(2024, 1, 2)),
+            (by_values[1], datetime(2023, 1, 1)),
+        ],
+        schema={"category": by_dtype, "timestamp": pl.Datetime},
+        orient="row",
+    ).sort("category", "timestamp")
+
+    lf_right = pl.LazyFrame(
+        data=[
+            (None, datetime(2024, 1, 1), 10),
+            (None, datetime(2024, 1, 3), 20),
+            (by_values[0], datetime(2024, 1, 1), 30),
+            (by_values[1], datetime(2024, 1, 1), 40),
+        ],
+        schema={"category": by_dtype, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    ).sort("category", "timestamp")
+
+    result = lf_left.join_asof(
+        lf_right,
+        on="timestamp",
+        by="category",
+        strategy="backward",
+        nulls_equal=True,
+    ).collect()
+
+    expected = lf_left.collect().with_columns(
+        pl.Series("value", [None, 10, 20, 30, None], dtype=pl.Int8)
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_join_asof_nulls_by_multiple_keys() -> None:
+    # Test that multi-key asof_join groups nulls correctly
+    combinations = [(None, None), (None, "y"), ("x", None), ("x", "y")]
+
+    lf_left = pl.LazyFrame(
+        data=[(k1, k2, datetime(2024, 1, 2)) for k1, k2 in combinations]
+        + [(None, None, datetime(2023, 1, 1)), ("z", "z", datetime(2024, 1, 2))],
+        schema={"k1": pl.String, "k2": pl.String, "timestamp": pl.Datetime},
+        orient="row",
+    ).sort("k1", "k2", "timestamp")
+
+    lf_right = pl.LazyFrame(
+        data=[
+            (k1, k2, datetime(2024, 1, 1), value)
+            for (k1, k2), value in zip(combinations, [11, 12, 13, 14], strict=True)
+        ],
+        schema={
+            "k1": pl.String,
+            "k2": pl.String,
+            "timestamp": pl.Datetime,
+            "value": pl.Int8,
+        },
+        orient="row",
+    ).sort("k1", "k2", "timestamp")
+
+    result = lf_left.join_asof(
+        lf_right,
+        on="timestamp",
+        by=["k1", "k2"],
+        strategy="backward",
+        nulls_equal=True,
+    ).collect()
+
+    expected = lf_left.collect().with_columns(
+        pl.Series("value", [None, 11, 12, 13, 14, None], dtype=pl.Int8)
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_nulls_by_one_sided(swap: bool) -> None:
+    # assert that one nulls in only 1df are not affected by nulls_equal
+    schema = {
+        "category": pl.Int64,
+        "timestamp": pl.Datetime,
+        "value": pl.Int8,
+    }
+    with_nulls = pl.LazyFrame(
+        data=[
+            (None, datetime(2024, 1, 2), 1),
+            (None, datetime(2024, 1, 4), 2),
+            (1, datetime(2024, 1, 2), 3),
+        ],
+        schema=schema,
+        orient="row",
+    ).sort("category", "timestamp")
+
+    without_nulls = pl.LazyFrame(
+        data=[
+            (1, datetime(2024, 1, 1), 30),
+            (2, datetime(2024, 1, 1), 40),
+        ],
+        schema=schema,
+        orient="row",
+    ).sort("category", "timestamp")
+
+    lf_left, lf_right = (
+        (without_nulls, with_nulls) if swap else (with_nulls, without_nulls)
+    )
+
+    result = lf_left.join_asof(
+        lf_right,
+        on="timestamp",
+        by=["category"],
+        strategy="backward",
+        nulls_equal=True,
+    ).collect()
+
+    values = [None, None] if swap else [None, None, 30]
+    expected = lf_left.collect().with_columns(
+        pl.Series("value_right", values, dtype=pl.Int8)
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_asof_join_nearest() -> None:
@@ -854,17 +1062,18 @@ def test_asof_join_nearest_by() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_asof_join_nearest_by_with_tolerance() -> None:
-    groups = [1] * 5 + [2] * 5 + [3] * 5 + [4] * 5 + [5] * 5 + [6] * 5
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_asof_join_nearest_by_with_tolerance(nulls_equal: bool) -> None:
+    groups = [1] * 5 + [2] * 5 + [3] * 5 + [4] * 5 + [5] * 5 + [6] * 5 + [None] * 5
 
     df1 = pl.DataFrame(
         {
             "group": groups,
             "asof_key": pl.Series(
-                [1, 2, 3, 4, 5] + [7, 8, 9, 10, 11] + [1, 2, 3, 4, 5] * 4,
+                [1, 2, 3, 4, 5] + [7, 8, 9, 10, 11] + [1, 2, 3, 4, 5] * 5,
                 dtype=pl.Float32,
             ),
-            "a": [1, 2, 3, 4, 5] * 6,
+            "a": [1, 2, 3, 4, 5] * 7,
         }
     )
 
@@ -877,17 +1086,20 @@ def test_asof_join_nearest_by_with_tolerance() -> None:
                 + [6, 7, 8, 9, 10]
                 + [5, -3, -2, -1, 0]
                 + [0, 2, 2.4, 3.4, 10]
-                + [-3, 3, 8, 9, 10],
+                + [-3, 3, 8, 9, 10]
+                + [0.5, 1.2, 3.9, 20, 100],
                 dtype=pl.Float32,
             ),
-            "b": [1, 2, 3, 4, 5] * 6,
+            "b": [1, 2, 3, 4, 5] * 7,
         }
     )
 
+    null_group_b = [2, 2, 3, 3, None] if nulls_equal else [None] * 5
     expected = df1.with_columns(
         pl.Series(
             [None] * 14
             + [1, 5, None, None, 1, 1, 2, 2, 4, 4, None, None, 2, 2, 2, None]
+            + null_group_b
         ).alias("b")
     )
     df1 = df1.sort(by=["group", "asof_key"])
@@ -895,7 +1107,12 @@ def test_asof_join_nearest_by_with_tolerance() -> None:
     expected = expected.sort(by=["group", "a"])
 
     out = df1.join_asof(
-        df2, by="group", on="asof_key", strategy="nearest", tolerance=1.0
+        df2,
+        by="group",
+        on="asof_key",
+        strategy="nearest",
+        tolerance=1.0,
+        nulls_equal=nulls_equal,
     ).sort(by=["group", "a"])
     assert_frame_equal(out, expected)
 

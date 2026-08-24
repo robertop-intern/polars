@@ -333,6 +333,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         should_coalesce,
                         options.allow_eq,
                         options.check_sortedness,
+                        args.nulls_equal,
                     ),
                     (None, None) => left_df._join_asof(
                         other,

@@ -623,7 +623,7 @@ impl<'a> ByGroups<'a> {
                     &cols,
                     &params.by_descending,
                     &params.by_nulls_last,
-                    true,
+                    !params.args.nulls_equal,
                 )?;
                 rle_lengths_helper_ca(&encoded, run_lengths);
                 GroupEncodingKind::Multi(encoded)
@@ -783,18 +783,21 @@ fn compute_asof_join(
 
     drop_columns(&mut left_df, &mut right_df, params)?;
 
+    let nulls_equal = params.args.nulls_equal;
     let mut out_right = Vec::with_capacity(left_groups.run_lengths.len());
     for (left_start, left_group_len) in left_groups_iter {
         let right_chunk_len =
             // SAFETY: the iterator results will be in-bounds.
-            if unsafe { left_groups.is_null_at(left_start) }  {
-                // If the left group is null, then it will have no matches on the right side.
+            if !nulls_equal && unsafe { left_groups.is_null_at(left_start) }  {
+                // If the left group is null and nulls are not equal, it will have no
+                // matches on the right side.
                 0
             } else {
-                // Advance the right cursor past null groups and any groups that are
-                // ordered before the left group.
+                // Advance the right cursor past null groups (if nulls are not equal) and
+                // any groups that are ordered before the left group.
                 let should_bump_right_group =  |right_start| unsafe {
-                    right_groups.is_null_at(right_start) || cmp_at(left_start, right_start).is_gt()
+                    (!nulls_equal && right_groups.is_null_at(right_start))
+                        || cmp_at(left_start, right_start).is_gt()
                 };
                 while let Some((right_start, _)) = right_group
                     && should_bump_right_group(right_start)

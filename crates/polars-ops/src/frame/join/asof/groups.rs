@@ -72,6 +72,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn asof_join_by_numeric<T, S, A, F>(
     by_left: &ChunkedArray<S>,
     by_right: &ChunkedArray<S>,
@@ -79,6 +80,7 @@ fn asof_join_by_numeric<T, S, A, F>(
     right_asof: &ChunkedArray<T>,
     filter: F,
     allow_eq: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<IdxArr>
 where
     T: PolarsDataType,
@@ -107,7 +109,8 @@ where
             ca.downcast_iter().next().unwrap()
         })
         .collect::<Vec<_>>();
-    let hash_tbls = build_tables_from_arrays::<S>(&right_arrays, false);
+    let hash_tbls = build_tables_from_arrays::<S>(&right_arrays, nulls_equal);
+
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
@@ -120,11 +123,15 @@ where
         assert_eq!(by_left.chunks().len(), 1);
         let by_left_chunk = by_left.downcast_iter().next().unwrap();
         for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
-            let Some(by_left_k) = opt_by_left_k else {
-                results.push(NullableIdxSize::null());
-                continue;
-            };
-            let by_left_k = Some(*by_left_k).to_total_ord();
+            let by_left_k = match opt_by_left_k {
+                Some(k) => Some(*k),
+                None if nulls_equal => None,
+                None => {
+                    results.push(NullableIdxSize::null());
+                    continue;
+                },
+            }
+            .to_total_ord();
             let idx_left = (rel_idx_left + offset) as IdxSize;
             let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                 results.push(NullableIdxSize::null());
@@ -153,6 +160,7 @@ where
     Ok(flatten_nullable(&bufs))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn asof_join_by_binary<B, T, A, F>(
     by_left: &ChunkedArray<B>,
     by_right: &ChunkedArray<B>,
@@ -160,6 +168,7 @@ fn asof_join_by_binary<B, T, A, F>(
     right_asof: &ChunkedArray<T>,
     filter: F,
     allow_eq: bool,
+    nulls_equal: bool,
 ) -> IdxArr
 where
     B: PolarsDataType,
@@ -174,7 +183,7 @@ where
 
     let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
     let offsets = compute_len_offsets(prep_by_left.iter().map(|s| s.len()));
-    let hash_tbls = build_tables(prep_by_right, false);
+    let hash_tbls = build_tables(prep_by_right, nulls_equal);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
@@ -222,6 +231,7 @@ fn dispatch_join_by_type<T, A, F>(
     right_by: &mut DataFrame,
     filter: F,
     allow_eq: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<IdxArr>
 where
     T: PolarsDataType,
@@ -241,14 +251,26 @@ where
                 let left_by = &left_by_s.str().unwrap().as_binary();
                 let right_by = right_by_s.str().unwrap().as_binary();
                 asof_join_by_binary::<BinaryType, T, A, F>(
-                    left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                    left_by,
+                    &right_by,
+                    left_asof,
+                    right_asof,
+                    filter,
+                    allow_eq,
+                    nulls_equal,
                 )
             },
             DataType::Binary => {
                 let left_by = &left_by_s.binary().unwrap();
                 let right_by = right_by_s.binary().unwrap();
                 asof_join_by_binary::<BinaryType, T, A, F>(
-                    left_by, right_by, left_asof, right_asof, filter, allow_eq,
+                    left_by,
+                    right_by,
+                    left_asof,
+                    right_asof,
+                    filter,
+                    allow_eq,
+                    nulls_equal,
                 )
             },
             x if x.is_float() => {
@@ -256,7 +278,7 @@ where
                     let left_by: &ChunkedArray<$T> = left_by_s.as_materialized_series().as_ref().as_ref().as_ref();
                     let right_by: &ChunkedArray<$T> = right_by_s.as_materialized_series().as_ref().as_ref().as_ref();
                     asof_join_by_numeric::<T, $T, A, F>(
-                        left_by, right_by, left_asof, right_asof, filter, allow_eq
+                        left_by, right_by, left_asof, right_asof, filter, allow_eq, nulls_equal
                     )?
                 })
             },
@@ -272,28 +294,58 @@ where
                 match (left_by, right_by) {
                     (B::U8(left_by), B::U8(right_by)) => {
                         asof_join_by_numeric::<T, UInt8Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                            &left_by,
+                            &right_by,
+                            left_asof,
+                            right_asof,
+                            filter,
+                            allow_eq,
+                            nulls_equal,
                         )?
                     },
                     (B::U16(left_by), B::U16(right_by)) => {
                         asof_join_by_numeric::<T, UInt16Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                            &left_by,
+                            &right_by,
+                            left_asof,
+                            right_asof,
+                            filter,
+                            allow_eq,
+                            nulls_equal,
                         )?
                     },
                     (B::U32(left_by), B::U32(right_by)) => {
                         asof_join_by_numeric::<T, UInt32Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                            &left_by,
+                            &right_by,
+                            left_asof,
+                            right_asof,
+                            filter,
+                            allow_eq,
+                            nulls_equal,
                         )?
                     },
                     (B::U64(left_by), B::U64(right_by)) => {
                         asof_join_by_numeric::<T, UInt64Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                            &left_by,
+                            &right_by,
+                            left_asof,
+                            right_asof,
+                            filter,
+                            allow_eq,
+                            nulls_equal,
                         )?
                     },
                     #[cfg(feature = "dtype-u128")]
                     (B::U128(left_by), B::U128(right_by)) => {
                         asof_join_by_numeric::<T, UInt128Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                            &left_by,
+                            &right_by,
+                            left_asof,
+                            right_asof,
+                            filter,
+                            allow_eq,
+                            nulls_equal,
                         )?
                     },
                     // We have already asserted that the datatypes are the same.
@@ -311,10 +363,16 @@ where
         // TODO: @scalar-opt.
         let left_by_series: Vec<_> = left_by.materialized_column_iter().cloned().collect();
         let right_by_series: Vec<_> = right_by.materialized_column_iter().cloned().collect();
-        let lhs_keys = prepare_keys_multiple(&left_by_series, false)?;
-        let rhs_keys = prepare_keys_multiple(&right_by_series, false)?;
+        let lhs_keys = prepare_keys_multiple(&left_by_series, nulls_equal)?;
+        let rhs_keys = prepare_keys_multiple(&right_by_series, nulls_equal)?;
         asof_join_by_binary::<BinaryOffsetType, T, A, F>(
-            &lhs_keys, &rhs_keys, left_asof, right_asof, filter, allow_eq,
+            &lhs_keys,
+            &rhs_keys,
+            left_asof,
+            right_asof,
+            filter,
+            allow_eq,
+            nulls_equal,
         )
     };
     Ok(out)
@@ -328,6 +386,7 @@ fn dispatch_join_strategy<T: PolarsDataType>(
     right_by: &mut DataFrame,
     strategy: AsofStrategy,
     allow_eq: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<IdxArr>
 where
     for<'a> T::Physical<'a>: TotalOrd,
@@ -337,10 +396,22 @@ where
     let filter = |_a: T::Physical<'_>, _b: T::Physical<'_>| true;
     match strategy {
         AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(
-            left_asof, right_asof, left_by, right_by, filter, allow_eq,
+            left_asof,
+            right_asof,
+            left_by,
+            right_by,
+            filter,
+            allow_eq,
+            nulls_equal,
         ),
         AsofStrategy::Forward => dispatch_join_by_type::<T, AsofJoinForwardState, _>(
-            left_asof, right_asof, left_by, right_by, filter, allow_eq,
+            left_asof,
+            right_asof,
+            left_by,
+            right_by,
+            filter,
+            allow_eq,
+            nulls_equal,
         ),
         AsofStrategy::Nearest => unimplemented!(),
     }
@@ -355,6 +426,7 @@ fn dispatch_join_strategy_numeric<T: PolarsNumericType>(
     strategy: AsofStrategy,
     tolerance: Option<AnyValue<'static>>,
     allow_eq: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<IdxArr> {
     let right_ca = left_asof.unpack_series_matching_type(right_asof)?;
 
@@ -364,26 +436,62 @@ fn dispatch_join_strategy_numeric<T: PolarsNumericType>(
         let filter = |a: T::Native, b: T::Native| a.abs_diff(b) <= abs_tolerance;
         match strategy {
             AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
+                left_asof,
+                right_ca,
+                left_by,
+                right_by,
+                filter,
+                allow_eq,
+                nulls_equal,
             ),
             AsofStrategy::Forward => dispatch_join_by_type::<T, AsofJoinForwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
+                left_asof,
+                right_ca,
+                left_by,
+                right_by,
+                filter,
+                allow_eq,
+                nulls_equal,
             ),
             AsofStrategy::Nearest => dispatch_join_by_type::<T, AsofJoinNearestState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
+                left_asof,
+                right_ca,
+                left_by,
+                right_by,
+                filter,
+                allow_eq,
+                nulls_equal,
             ),
         }
     } else {
         let filter = |_a: T::Physical<'_>, _b: T::Physical<'_>| true;
         match strategy {
             AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
+                left_asof,
+                right_ca,
+                left_by,
+                right_by,
+                filter,
+                allow_eq,
+                nulls_equal,
             ),
             AsofStrategy::Forward => dispatch_join_by_type::<T, AsofJoinForwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
+                left_asof,
+                right_ca,
+                left_by,
+                right_by,
+                filter,
+                allow_eq,
+                nulls_equal,
             ),
             AsofStrategy::Nearest => dispatch_join_by_type::<T, AsofJoinNearestState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
+                left_asof,
+                right_ca,
+                left_by,
+                right_by,
+                filter,
+                allow_eq,
+                nulls_equal,
             ),
         }
     }
@@ -398,75 +506,151 @@ fn dispatch_join_type(
     strategy: AsofStrategy,
     tolerance: Option<AnyValue<'static>>,
     allow_eq: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<IdxArr> {
     match left_asof.dtype() {
         DataType::Int64 => {
             let ca = left_asof.i64().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::Int32 => {
             let ca = left_asof.i32().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::UInt64 => {
             let ca = left_asof.u64().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::UInt32 => {
             let ca = left_asof.u32().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         #[cfg(feature = "dtype-i128")]
         DataType::Int128 => {
             let ca = left_asof.i128().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         #[cfg(feature = "dtype-u128")]
         DataType::UInt128 => {
             let ca = left_asof.u128().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = left_asof.f16().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::Float64 => {
             let ca = left_asof.f64().unwrap();
             dispatch_join_strategy_numeric(
-                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                tolerance,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::Boolean => {
             let ca = left_asof.bool().unwrap();
             dispatch_join_strategy::<BooleanType>(
-                ca, right_asof, left_by, right_by, strategy, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::Binary => {
             let ca = left_asof.binary().unwrap();
             dispatch_join_strategy::<BinaryType>(
-                ca, right_asof, left_by, right_by, strategy, allow_eq,
+                ca,
+                right_asof,
+                left_by,
+                right_by,
+                strategy,
+                allow_eq,
+                nulls_equal,
             )
         },
         DataType::String => {
@@ -479,6 +663,7 @@ fn dispatch_join_type(
                 right_by,
                 strategy,
                 allow_eq,
+                nulls_equal,
             )
         },
         DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
@@ -493,6 +678,7 @@ fn dispatch_join_type(
                 strategy,
                 tolerance,
                 allow_eq,
+                nulls_equal,
             )
         },
         dt => polars_bail!(opq = asof_join, dt),
@@ -516,6 +702,7 @@ pub trait AsofJoinBy: IntoDf {
         coalesce: bool,
         allow_eq: bool,
         check_sortedness: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<DataFrame> {
         let (self_sliced_slot, left_slice_s); // Keeps temporaries alive.
         let (self_df, other_df, left_key, right_key);
@@ -564,6 +751,7 @@ pub trait AsofJoinBy: IntoDf {
             strategy,
             tolerance,
             allow_eq,
+            nulls_equal,
         )?;
 
         let mut drop_these = right_by.get_column_names();
@@ -605,6 +793,7 @@ pub trait AsofJoinBy: IntoDf {
         tolerance: Option<AnyValue<'static>>,
         allow_eq: bool,
         check_sortedness: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
@@ -628,6 +817,7 @@ pub trait AsofJoinBy: IntoDf {
             true,
             allow_eq,
             check_sortedness,
+            nulls_equal,
         )
     }
 }
@@ -661,6 +851,7 @@ mod test {
             None,
             true,
             true,
+            false,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
@@ -706,6 +897,7 @@ mod test {
             None,
             true,
             true,
+            false,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -723,6 +915,7 @@ mod test {
             None,
             true,
             true,
+            false,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -755,6 +948,7 @@ mod test {
             None,
             true,
             true,
+            false,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
@@ -774,6 +968,7 @@ mod test {
             Some(AnyValue::Int32(1)),
             true,
             true,
+            false,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
@@ -844,6 +1039,7 @@ mod test {
             None,
             true,
             true,
+            false,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -867,6 +1063,7 @@ mod test {
             None,
             true,
             true,
+            false,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
