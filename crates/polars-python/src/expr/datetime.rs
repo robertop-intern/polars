@@ -1,3 +1,4 @@
+use polars::chunked_array::cast::CastOptions;
 use polars::prelude::*;
 use pyo3::prelude::*;
 
@@ -44,8 +45,17 @@ impl PyExpr {
             .into())
     }
 
-    fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
-        self.inner.clone().dt().cast_time_unit(time_unit.0).into()
+    fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>, strict: bool) -> Self {
+        let options = if strict {
+            CastOptions::Strict
+        } else {
+            CastOptions::NonStrict
+        };
+        self.inner
+            .clone()
+            .dt()
+            .cast_time_unit(time_unit.0, options)
+            .into()
     }
 
     #[cfg(feature = "timezones")]

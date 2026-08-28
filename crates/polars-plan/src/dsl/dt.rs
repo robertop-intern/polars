@@ -39,11 +39,12 @@ impl DateLikeNameSpace {
     }
 
     /// Change the underlying [`TimeUnit`]. And update the data accordingly.
-    pub fn cast_time_unit(self, tu: TimeUnit) -> Expr {
+    pub fn cast_time_unit(self, tu: TimeUnit, options: CastOptions) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::CastTimeUnit(
-                tu,
-            )))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::CastTimeUnit {
+                time_unit: tu,
+                options,
+            }))
     }
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
