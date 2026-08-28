@@ -106,7 +106,7 @@ impl<'a> AnyValueBuffer<'a> {
             ) => {
                 // we convert right tu to left tu
                 // so we swap.
-                let v = crate::datatypes::time_unit::convert_time_units(v, tu_r, *tu_l);
+                let v = crate::datatypes::time_unit::convert_time_units_checked(v, tu_r, *tu_l)?;
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-datetime")]
@@ -117,7 +117,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Duration(builder, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, tu_l), AnyValue::Duration(v, tu_r)) => {
-                let v = crate::datatypes::time_unit::convert_time_units(v, tu_r, *tu_l);
+                let v = crate::datatypes::time_unit::convert_time_units_checked(v, tu_r, *tu_l)?;
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
