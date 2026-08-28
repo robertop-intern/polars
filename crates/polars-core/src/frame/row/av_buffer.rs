@@ -154,15 +154,20 @@ impl<'a> AnyValueBuffer<'a> {
         Some(())
     }
 
-    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
-        self.add(val.clone()).ok_or_else(|| {
-            polars_err!(
-                ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
-                have the same schema or consider increasing `infer_schema_length`\n\
-                \n\
-                it might also be that a value overflows the data-type's capacity", val, val.dtype()
-            )
-        })
+    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>, strict: bool) -> PolarsResult<()> {
+        if self.add(val.clone()).is_some() {
+            return Ok(());
+        }
+        polars_ensure!(
+            !strict,
+            ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
+            have the same schema or consider increasing `infer_schema_length`\n\
+            \n\
+            it might also be that a value overflows the data-type's capacity", val, val.dtype()
+        );
+
+        self.add(AnyValue::Null).unwrap();
+        Ok(())
     }
 
     pub fn reset(&mut self, capacity: usize, strict: bool) -> PolarsResult<Series> {

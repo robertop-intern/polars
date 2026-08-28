@@ -169,10 +169,10 @@ fn collect_lambda_ret_with_rows_output<'py>(
                 .chain(row_iter)
                 .trust_my_length(height)
         };
-        DataFrame::try_from_rows_iter_and_schema(iter, &schema)
+        DataFrame::try_from_rows_iter_and_schema(iter, &schema, true)
     } else {
         // SAFETY: we know the iterators size.
         let iter = unsafe { buf.iter().map(Ok).chain(row_iter).trust_my_length(height) };
-        DataFrame::try_from_rows_iter_and_schema(iter, &schema)
+        DataFrame::try_from_rows_iter_and_schema(iter, &schema, true)
     }
 }
