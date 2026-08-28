@@ -39,15 +39,19 @@ impl DataFrame {
     ///
     /// This should only be used when you have row wise data, as this is a lot slower
     /// than creating the [`Series`] in a columnar fashion
-    pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> PolarsResult<Self> {
-        Self::from_rows_iter_and_schema(rows.iter(), schema)
+    pub fn from_rows_and_schema(rows: &[Row], schema: &Schema, strict: bool) -> PolarsResult<Self> {
+        Self::from_rows_iter_and_schema(rows.iter(), schema, strict)
     }
 
     /// Create a new [`DataFrame`] from an iterator over rows.
     ///
     /// This should only be used when you have row wise data, as this is a lot slower
     /// than creating the [`Series`] in a columnar fashion.
-    pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
+    pub fn from_rows_iter_and_schema<'a, I>(
+        mut rows: I,
+        schema: &Schema,
+        strict: bool,
+    ) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
@@ -71,7 +75,7 @@ impl DataFrame {
         rows.try_for_each::<_, PolarsResult<()>>(|row| {
             expected_len += 1;
             for (value, buf) in row.0.iter().zip(&mut buffers) {
-                buf.add_fallible(value)?
+                buf.add_fallible(value, strict)?
             }
             Ok(())
         })?;
@@ -97,7 +101,11 @@ impl DataFrame {
 
     /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
     /// as this is a lot slower than creating the [`Series`] in a columnar fashion
-    pub fn try_from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
+    pub fn try_from_rows_iter_and_schema<'a, I>(
+        mut rows: I,
+        schema: &Schema,
+        strict: bool,
+    ) -> PolarsResult<Self>
     where
         I: Iterator<Item = PolarsResult<&'a Row<'a>>>,
     {
@@ -115,7 +123,7 @@ impl DataFrame {
         rows.try_for_each::<_, PolarsResult<()>>(|row| {
             expected_len += 1;
             for (value, buf) in row?.0.iter().zip(&mut buffers) {
-                buf.add_fallible(value)?
+                buf.add_fallible(value, strict)?
             }
             Ok(())
         })?;
@@ -148,6 +156,6 @@ impl DataFrame {
         polars_ensure!(
             !has_nulls, ComputeError: "unable to infer row types because of null values"
         );
-        Self::from_rows_and_schema(rows, &schema)
+        Self::from_rows_and_schema(rows, &schema, true)
     }
 }
