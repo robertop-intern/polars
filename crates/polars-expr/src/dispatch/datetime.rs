@@ -264,12 +264,12 @@ pub(super) fn cast_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
     match s.dtype() {
         DataType::Datetime(_, _) => {
             let ca = s.datetime()?;
-            Ok(ca.cast_time_unit(tu).into_column())
+            Ok(ca.cast_time_unit(tu)?.into_column())
         },
         #[cfg(feature = "dtype-duration")]
         DataType::Duration(_) => {
             let ca = s.as_materialized_series().duration()?;
-            Ok(ca.cast_time_unit(tu).into_column())
+            Ok(ca.cast_time_unit(tu)?.into_column())
         },
         dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
     }
