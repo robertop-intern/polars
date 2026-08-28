@@ -77,3 +77,20 @@ where
         _ => v,
     }
 }
+
+/// [`convert_time_units`], returning `None` instead of wrapping on overflow.
+#[cfg(any(feature = "rows", feature = "object"))]
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+#[inline]
+pub fn convert_time_units_checked(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> Option<i64> {
+    use TimeUnit::*;
+    match (tu_l, tu_r) {
+        (Nanoseconds, Microseconds) => Some(v / 1_000),
+        (Nanoseconds, Milliseconds) => Some(v / 1_000_000),
+        (Microseconds, Milliseconds) => Some(v / 1_000),
+        (Microseconds, Nanoseconds) => v.checked_mul(1_000),
+        (Milliseconds, Microseconds) => v.checked_mul(1_000),
+        (Milliseconds, Nanoseconds) => v.checked_mul(1_000_000),
+        _ => Some(v),
+    }
+}
