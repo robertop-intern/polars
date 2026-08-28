@@ -1,5 +1,6 @@
 #[cfg(feature = "timezones")]
 use arrow::legacy::time_zone::Tz;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::prelude::{
     ArithmeticChunked, Column, DataType, IntoColumn, LogicalType, TimeUnit,
@@ -260,16 +261,20 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
         dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
     }
 }
-pub(super) fn cast_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
+pub(super) fn cast_time_unit(
+    s: &Column,
+    tu: TimeUnit,
+    options: CastOptions,
+) -> PolarsResult<Column> {
     match s.dtype() {
         DataType::Datetime(_, _) => {
             let ca = s.datetime()?;
-            Ok(ca.cast_time_unit(tu)?.into_column())
+            Ok(ca.cast_time_unit_with_options(tu, options)?.into_column())
         },
         #[cfg(feature = "dtype-duration")]
         DataType::Duration(_) => {
             let ca = s.as_materialized_series().duration()?;
-            Ok(ca.cast_time_unit(tu)?.into_column())
+            Ok(ca.cast_time_unit_with_options(tu, options)?.into_column())
         },
         dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
     }

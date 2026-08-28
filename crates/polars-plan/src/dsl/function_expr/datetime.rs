@@ -55,7 +55,10 @@ pub enum TemporalFunction {
         fractional: bool,
     },
     ToString(String),
-    CastTimeUnit(TimeUnit),
+    CastTimeUnit {
+        time_unit: TimeUnit,
+        options: CastOptions,
+    },
     #[cfg(feature = "timezones")]
     ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
@@ -124,7 +127,7 @@ impl Display for TemporalFunction {
             ToString(_) => "to_string",
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
-            CastTimeUnit(_) => "cast_time_unit",
+            CastTimeUnit { .. } => "cast_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate => "truncate",
             #[cfg(feature = "offset_by")]

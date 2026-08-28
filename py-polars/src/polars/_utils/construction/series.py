@@ -251,7 +251,7 @@ def sequence_to_pyseries(
         if dtype.is_temporal() and values_dtype == String and dtype != Duration:
             s = wrap_s(py_series).str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
         elif time_unit is not None and values_dtype != Date:
-            s = wrap_s(py_series).dt.cast_time_unit(time_unit)
+            s = wrap_s(py_series).dt.cast_time_unit(time_unit, strict=strict)
         else:
             s = wrap_s(py_series)
 
