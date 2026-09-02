@@ -15,6 +15,7 @@ from polars._dependencies import (
     torch,
 )
 from polars._dependencies import numpy as np
+from polars._utils.construction.utils import time_unit_of
 from polars._utils.wrap import wrap_expr
 from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
@@ -115,7 +116,7 @@ def lit(
             tu = cast("TimeUnit", tu)
             time_unit = tu
         else:
-            time_unit = "us"
+            time_unit = time_unit_of(value)
 
         # parse time zone
         dtype_tz = getattr(dtype, "time_zone", None)
