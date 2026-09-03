@@ -83,6 +83,29 @@ def test_write_parquet_using_pyarrow_9753(tmp_path: Path) -> None:
     )
 
 
+def test_write_parquet_using_pyarrow_options_take_precedence_29136() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+
+    f = io.BytesIO()
+    df.write_parquet(
+        f,
+        use_pyarrow=True,
+        pyarrow_options={
+            "compression": "gzip",
+            "compression_level": 3,
+            "write_statistics": False,
+            "row_group_size": 2,
+            "data_page_size": 2048,
+        },
+    )
+
+    metadata = pq.read_metadata(f)
+    assert metadata.num_row_groups == 2
+    column = metadata.row_group(0).column(0)
+    assert column.compression == "GZIP"
+    assert column.statistics is None
+
+
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_write_parquet_using_pyarrow_write_to_dataset_with_partitioning(
     tmp_path: Path,
