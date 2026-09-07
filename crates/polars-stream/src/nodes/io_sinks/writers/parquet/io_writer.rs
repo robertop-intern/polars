@@ -4,11 +4,9 @@ use arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_io::parquet::write::BatchedWriter;
+use polars_io::parquet::write::{BatchedWriter, FullWriteOptions};
 use polars_io::prelude::KeyValueMetadata;
-use polars_parquet::write::{
-    Encoding, FileWriter, SchemaDescriptor, WriteOptions, write_metadata_sidecar,
-};
+use polars_parquet::write::{Encoding, FileWriter, SchemaDescriptor, write_metadata_sidecar};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
@@ -19,7 +17,7 @@ pub struct IOWriter {
         tokio::sync::mpsc::Receiver<executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
     pub arrow_schema: ArrowSchemaRef,
     pub schema_descriptor: Arc<SchemaDescriptor>,
-    pub write_options: WriteOptions,
+    pub write_options: FullWriteOptions,
     pub encodings: Buffer<Vec<Encoding>>,
     pub key_value_metadata: Option<KeyValueMetadata>,
     pub num_leaf_columns: usize,
@@ -41,12 +39,13 @@ impl IOWriter {
         let (mut file, sync_on_close) = file.await?;
         let mut buffered_file = file.as_buffered_writable();
 
+        let file_options = write_options.file_options();
         let mut parquet_writer = BatchedWriter::new(
             std::sync::Mutex::new(FileWriter::new_with_parquet_schema(
                 &mut buffered_file,
                 Arc::unwrap_or_clone(arrow_schema),
                 Arc::unwrap_or_clone(schema_descriptor),
-                write_options,
+                file_options,
             )),
             encodings,
             write_options,

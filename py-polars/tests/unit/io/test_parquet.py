@@ -4766,3 +4766,91 @@ def test_scan_parquet_from_file_handle(
         assert_frame_equal(
             pl.scan_parquet(f).select("a", "c").collect(), expect.select("a", "c")
         )
+
+
+def _column_statistics(f: io.BytesIO) -> dict[str, Any]:
+    """The statistics of each column of the first row group, by column name."""
+    rg = pq.read_metadata(f).row_group(0)
+    return {
+        rg.column(i).path_in_schema: rg.column(i).statistics
+        for i in range(rg.num_columns)
+    }
+
+
+def test_parquet_per_column_statistics_column_names_19540() -> None:
+    # Assert that only columns mentioned in statistics have metadata statistics
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [1.5, 2.5, 3.5]})
+
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=["a", "c"])
+
+    statistics = _column_statistics(f)
+    assert statistics["a"] is not None
+    assert statistics["b"] is None
+    assert statistics["c"] is not None
+
+
+@pytest.mark.parametrize("statistics", [True, False, "full", {"null_count": True}])
+def test_parquet_global_statistics_19540(statistics: Any) -> None:
+    # Assert that globals statistic args write statistics for each column
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=statistics)
+
+    # A global specification applies to every column.
+    written = [s is not None for s in _column_statistics(f).values()]
+    assert all(written) or not any(written)
+
+
+def test_parquet_per_column_statistics_values_19540() -> None:
+    # Assert that per column statistic are applied correctly to each column
+    df = pl.DataFrame(
+        {
+            "default": [1, 2, None],
+            "full": [3, 4, None],
+            "bounds": [5, 6, None],
+            "disabled": [7, 8, None],
+            "unlisted": [9, 10, None],
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(
+        f,
+        statistics=[
+            ("default", True),
+            ("full", "full"),
+            ("bounds", {"min": True, "max": True, "null_count": True}),
+            ("disabled", False),
+        ],
+    )
+
+    statistics = _column_statistics(f)
+
+    default = statistics["default"]
+    assert (default.min, default.max) == (1, 2)
+    assert default.null_count == 1
+    assert not default.has_distinct_count
+
+    full = statistics["full"]
+    assert (full.min, full.max) == (3, 4)
+    assert full.null_count == 1
+
+    bounds = statistics["bounds"]
+    assert (bounds.min, bounds.max) == (5, 6)
+    assert bounds.null_count == 1
+
+    assert statistics["disabled"] is None
+    assert statistics["unlisted"] is None
+
+
+def test_parquet_per_column_statistics_invalid_19540() -> None:
+    # Assert that invalid statistic input throws nicely
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError, match="nonexistent"):
+        df.write_parquet(io.BytesIO(), statistics=["nonexistent"])
+
+    with pytest.raises(ValueError, match="more than once"):
+        df.write_parquet(io.BytesIO(), statistics=["a", ("a", False)])

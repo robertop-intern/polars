@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         IpcCompression,
         ParquetCompression,
         ParquetMetadata,
+        ParquetStatistics,
         PostOptCallback,
         StorageOptionsDict,
         SyncOnCloseMethod,
@@ -202,7 +203,7 @@ class Engine(ABC):
         *,
         compression: ParquetCompression,
         compression_level: int | None,
-        statistics: bool | str | dict[str, bool],
+        statistics: ParquetStatistics,
         row_group_size: int | None,
         data_page_size: int | None,
         maintain_order: bool,
@@ -508,7 +509,7 @@ class _LocalEngine(Engine):
         *,
         compression: ParquetCompression,
         compression_level: int | None,
-        statistics: bool | str | dict[str, bool],
+        statistics: ParquetStatistics,
         row_group_size: int | None,
         data_page_size: int | None,
         maintain_order: bool,
@@ -522,7 +523,10 @@ class _LocalEngine(Engine):
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> LazyFrame | None:
-        from polars._utils.parquet import wrap_parquet_metadata_callback
+        from polars._utils.parquet import (
+            normalize_statistics,
+            wrap_parquet_metadata_callback,
+        )
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
         )
@@ -536,22 +540,7 @@ class _LocalEngine(Engine):
             msg = "`arrow_schema` parameter is considered unstable"
             issue_unstable_warning(msg)
 
-        if isinstance(statistics, bool) and statistics:
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": False,
-                "null_count": True,
-            }
-        elif isinstance(statistics, bool) and not statistics:
-            statistics = {}
-        elif statistics == "full":
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": True,
-                "null_count": True,
-            }
+        normalized_statistics = normalize_statistics(statistics)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
@@ -583,7 +572,7 @@ class _LocalEngine(Engine):
             sink_options=sink_options,
             compression=compression,
             compression_level=compression_level,
-            statistics=statistics,
+            statistics=normalized_statistics,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             metadata=metadata,

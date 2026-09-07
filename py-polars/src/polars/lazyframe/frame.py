@@ -149,6 +149,7 @@ if TYPE_CHECKING:
         Orientation,
         ParquetCompression,
         ParquetMetadata,
+        ParquetStatistics,
         PivotAgg,
         PlanStage,
         PolarsDataType,
@@ -2399,7 +2400,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool | str | dict[str, bool] = True,
+        statistics: ParquetStatistics = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
@@ -2424,7 +2425,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool | str | dict[str, bool] = True,
+        statistics: ParquetStatistics = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
@@ -2456,7 +2457,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool | str | dict[str, bool] = True,
+        statistics: ParquetStatistics = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
@@ -2511,6 +2512,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               - "max": column maximum value (default: `True`)
               - "distinct_count": number of unique column values (default: `False`)
               - "null_count": number of null values in column (default: `True`)
+            - A sequence, to select statistics per column. Columns that are not
+              named get no statistics at all. An entry is either a column name,
+              which enables the default set for that column, or a
+              `(column name, statistics)` tuple, where the statistics are any of
+              the specifications above.
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are

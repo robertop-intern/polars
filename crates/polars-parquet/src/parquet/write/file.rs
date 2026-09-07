@@ -4,7 +4,7 @@ use polars_parquet_format::RowGroup;
 use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 
 use super::indexes::{write_column_index, write_offset_index};
-use super::page::PageWriteSpec;
+use super::page::{PageWriteSpec, is_data_page};
 use super::row_group::write_row_group;
 use super::{RowGroupIterColumns, WriteOptions};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -12,6 +12,13 @@ pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::metadata::{SchemaDescriptor, ThriftFileMetadata};
 use crate::parquet::write::State;
 use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
+
+pub(super) fn has_page_statistics(pages: &[PageWriteSpec]) -> bool {
+    pages
+        .iter()
+        .find(|spec| is_data_page(spec))
+        .is_some_and(|spec| spec.statistics.is_some())
+}
 
 pub(super) fn start_file<W: Write>(writer: &mut W) -> ParquetResult<u64> {
     writer.write_all(&PARQUET_MAGIC)?;
@@ -201,6 +208,11 @@ impl<W: Write> FileWriter<W> {
                 .try_for_each(|(group, pages)| {
                     group.columns.iter_mut().zip(pages.iter()).try_for_each(
                         |(column, pages)| {
+                            // Statistics can be disabled per column, and a column index
+                            // requires page statistics.
+                            if !has_page_statistics(pages) {
+                                return ParquetResult::Ok(());
+                            }
                             let offset = self.offset;
                             column.column_index_offset = Some(offset as i64);
                             self.offset += write_column_index(&mut self.writer, pages)?;

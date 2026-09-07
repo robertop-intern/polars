@@ -5,13 +5,12 @@ use polars_buffer::Buffer;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
-    get_dtype_encoding, to_parquet_schema,
+    CompressionOptions, Encoding, FileWriter, Version, get_dtype_encoding, to_parquet_schema,
 };
 
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
-use super::{KeyValueMetadata, ParquetWriteOptions};
+use super::{FullWriteOptions, KeyValueMetadata, ParquetStatisticsConfig, ParquetWriteOptions};
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -21,7 +20,7 @@ impl ParquetWriteOptions {
     {
         ParquetWriter::new(f)
             .with_compression(self.compression)
-            .with_statistics(self.statistics)
+            .with_statistics(self.statistics.clone())
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
             .with_key_value_metadata(self.key_value_metadata.clone())
@@ -35,7 +34,7 @@ pub struct ParquetWriter<W> {
     /// Data page compression
     compression: CompressionOptions,
     /// Compute and write column statistics.
-    statistics: StatisticsOptions,
+    statistics: ParquetStatisticsConfig,
     /// if `None` will be 512^2 rows
     row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
@@ -60,7 +59,7 @@ where
         ParquetWriter {
             writer,
             compression: ParquetCompression::default().into(),
-            statistics: StatisticsOptions::default(),
+            statistics: ParquetStatisticsConfig::default(),
             row_group_size: None,
             data_page_size: None,
             parallel: true,
@@ -79,8 +78,8 @@ where
     }
 
     /// Compute and write statistic
-    pub fn with_statistics(mut self, statistics: StatisticsOptions) -> Self {
-        self.statistics = statistics;
+    pub fn with_statistics(mut self, statistics: impl Into<ParquetStatisticsConfig>) -> Self {
+        self.statistics = statistics.into();
         self
     }
 
@@ -119,8 +118,18 @@ where
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
-        let options = self.materialize_options();
-        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
+        let options = FullWriteOptions::try_new(
+            self.compression,
+            Version::V1,
+            self.data_page_size,
+            &self.statistics,
+            &schema,
+        )?;
+        let writer = Mutex::new(FileWriter::try_new(
+            self.writer,
+            schema,
+            options.file_options(),
+        )?);
 
         Ok(BatchedWriter {
             writer,
@@ -130,15 +139,6 @@ where
             parallel: self.parallel,
             key_value_metadata: self.key_value_metadata,
         })
-    }
-
-    fn materialize_options(&self) -> WriteOptions {
-        WriteOptions {
-            statistics: self.statistics,
-            compression: self.compression,
-            version: Version::V1,
-            data_page_size: self.data_page_size,
-        }
     }
 
     /// Write the given DataFrame in the writer `W`.

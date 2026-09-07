@@ -4,6 +4,7 @@ use futures::{AsyncWrite, AsyncWriteExt};
 use polars_parquet_format::RowGroup;
 use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 
+use super::file::has_page_statistics;
 use super::row_group::write_row_group_async;
 use super::{RowGroupIterColumns, WriteOptions};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -150,6 +151,11 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
             // write column indexes (require page statistics)
             for (group, pages) in self.row_groups.iter_mut().zip(self.page_specs.iter()) {
                 for (column, pages) in group.columns.iter_mut().zip(pages.iter()) {
+                    // Statistics can be disabled per column, and a column index requires
+                    // page statistics.
+                    if !has_page_statistics(pages) {
+                        continue;
+                    }
                     let offset = self.offset;
                     column.column_index_offset = Some(offset as i64);
                     self.offset += write_column_index_async(&mut self.writer, pages).await?;

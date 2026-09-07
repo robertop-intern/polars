@@ -533,7 +533,9 @@ __all__ = [
     "Orientation",
     "ParallelStrategy",
     "ParametricProfileNames",
+    "ParquetColumnStatistics",
     "ParquetCompression",
+    "ParquetStatistics",
     "PivotAgg",
     "PlanTypePreference",
     "PolarsDataType",
@@ -586,5 +588,10 @@ class ParquetMetadataContext:
 
 ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
 ParquetMetadata: TypeAlias = dict[str, str] | ParquetMetadataFn
+
+ParquetColumnStatistics: TypeAlias = bool | str | Mapping[str, bool]
+ParquetStatistics: TypeAlias = (
+    ParquetColumnStatistics | Sequence[str | tuple[str, ParquetColumnStatistics]]
+)
 
 StorageOptionsDict: TypeAlias = dict[str, Any]
