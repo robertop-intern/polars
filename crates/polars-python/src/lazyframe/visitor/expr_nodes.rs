@@ -2,6 +2,7 @@
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
@@ -1500,9 +1501,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRTemporalFunction::ToString(format) => {
                         (PyTemporalFunction::ToString, format).into_py_any(py)
                     },
-                    IRTemporalFunction::CastTimeUnit(time_unit) => {
-                        (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py_any(py)
-                    },
+                    IRTemporalFunction::CastTimeUnit { time_unit, options } => (
+                        PyTemporalFunction::CastTimeUnit,
+                        Wrap(*time_unit),
+                        matches!(options, CastOptions::Strict),
+                    )
+                        .into_py_any(py),
                     #[cfg(feature = "timezones")]
                     IRTemporalFunction::ConvertTimeZone(time_zone) => {
                         (PyTemporalFunction::ConvertTimeZone, time_zone.as_str()).into_py_any(py)

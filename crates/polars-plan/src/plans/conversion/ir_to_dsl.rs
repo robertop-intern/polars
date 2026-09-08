@@ -624,7 +624,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "dtype-duration")]
                 IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
-                IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
+                IB::CastTimeUnit { time_unit, options } => B::CastTimeUnit { time_unit, options },
                 #[cfg(feature = "timezones")]
                 IB::ConvertTimeZone(time_zone) => B::ConvertTimeZone(time_zone),
                 IB::TimeStamp(time_unit) => B::TimeStamp(time_unit),

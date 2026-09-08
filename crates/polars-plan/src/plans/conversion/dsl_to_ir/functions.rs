@@ -431,7 +431,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "dtype-duration")]
                 T::TotalNanoseconds { fractional } => IT::TotalNanoseconds { fractional },
                 T::ToString(v) => IT::ToString(v),
-                T::CastTimeUnit(time_unit) => IT::CastTimeUnit(time_unit),
+                T::CastTimeUnit { time_unit, options } => IT::CastTimeUnit { time_unit, options },
                 #[cfg(feature = "timezones")]
                 T::ConvertTimeZone(time_zone) => IT::ConvertTimeZone(time_zone),
                 T::TimeStamp(time_unit) => IT::TimeStamp(time_unit),

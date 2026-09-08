@@ -7,8 +7,10 @@ use arrow::temporal_conversions::{
 use chrono::TimeZone as TimeZoneTrait;
 
 use super::*;
+use crate::chunked_array::cast::CastOptions;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
+use crate::utils::handle_casting_failures;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(&self) -> impl TrustedLen<Item = Option<NaiveDateTime>> + '_ {
@@ -122,48 +124,57 @@ impl DatetimeChunked {
     }
 
     /// Change the underlying [`TimeUnit`]. And update the data accordingly.
-    #[must_use]
-    pub fn cast_time_unit(&self, tu: TimeUnit) -> Self {
+    ///
+    /// Raises if a value does not fit in `tu`.
+    pub fn cast_time_unit(&self, tu: TimeUnit) -> PolarsResult<Self> {
+        self.cast_time_unit_with_options(tu, CastOptions::Strict)
+    }
+
+    /// Change the underlying [`TimeUnit`]. And update the data accordingly.
+    pub fn cast_time_unit_with_options(
+        &self,
+        tu: TimeUnit,
+        options: CastOptions,
+    ) -> PolarsResult<Self> {
         let current_unit = self.time_unit();
         let mut out = self.clone();
         out.set_time_unit(tu);
 
         use crate::datatypes::time_unit::TimeUnit::*;
-        match (current_unit, tu) {
-            (Nanoseconds, Microseconds) => {
-                let ca = (&self.phys).wrapping_floor_div_scalar(1_000);
-                out.phys = ca;
-                out
-            },
-            (Nanoseconds, Milliseconds) => {
-                let ca = (&self.phys).wrapping_floor_div_scalar(1_000_000);
-                out.phys = ca;
-                out
-            },
-            (Microseconds, Nanoseconds) => {
-                let ca = &self.phys * 1_000;
-                out.phys = ca;
-                out
-            },
-            (Microseconds, Milliseconds) => {
-                let ca = (&self.phys).wrapping_floor_div_scalar(1_000);
-                out.phys = ca;
-                out
-            },
-            (Milliseconds, Nanoseconds) => {
-                let ca = &self.phys * 1_000_000;
-                out.phys = ca;
-                out
-            },
-            (Milliseconds, Microseconds) => {
-                let ca = &self.phys * 1_000;
-                out.phys = ca;
-                out
-            },
+        let (divisor, multiplier) = match (current_unit, tu) {
+            (Nanoseconds, Microseconds) => (Some(1_000i64), None),
+            (Nanoseconds, Milliseconds) => (Some(1_000_000i64), None),
+            (Microseconds, Milliseconds) => (Some(1_000i64), None),
+            (Microseconds, Nanoseconds) => (None, Some(1_000i64)),
+            (Milliseconds, Microseconds) => (None, Some(1_000i64)),
+            (Milliseconds, Nanoseconds) => (None, Some(1_000_000i64)),
             (Nanoseconds, Nanoseconds)
             | (Microseconds, Microseconds)
-            | (Milliseconds, Milliseconds) => out,
+            | (Milliseconds, Milliseconds) => return Ok(out),
+        };
+
+        match (divisor, multiplier) {
+            (None, None) | (Some(_), Some(_)) => unreachable!(),
+            (Some(divisor), _) => out.phys = (&self.phys).wrapping_floor_div_scalar(divisor),
+            (_, Some(multiplier)) => match options {
+                CastOptions::Overflowing => {
+                    out.phys = self.phys.as_ref().wrapping_mul_scalar(multiplier)
+                },
+                CastOptions::NonStrict => {
+                    out.phys = self.phys.as_ref().checked_mul_scalar(multiplier)
+                },
+                CastOptions::Strict => {
+                    out.phys = self.phys.as_ref().checked_mul_scalar(multiplier);
+                    if out.phys.null_count() != self.phys.null_count() {
+                        handle_casting_failures(
+                            &self.clone().into_series(),
+                            &out.clone().into_series(),
+                        )?;
+                    }
+                },
+            },
         }
+        Ok(out)
     }
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.

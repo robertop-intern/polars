@@ -106,7 +106,7 @@ impl<'a> AnyValueBuffer<'a> {
             ) => {
                 // we convert right tu to left tu
                 // so we swap.
-                let v = crate::datatypes::time_unit::convert_time_units(v, tu_r, *tu_l);
+                let v = crate::datatypes::time_unit::convert_time_units_checked(v, tu_r, *tu_l)?;
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-datetime")]
@@ -117,7 +117,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Duration(builder, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, tu_l), AnyValue::Duration(v, tu_r)) => {
-                let v = crate::datatypes::time_unit::convert_time_units(v, tu_r, *tu_l);
+                let v = crate::datatypes::time_unit::convert_time_units_checked(v, tu_r, *tu_l)?;
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
@@ -154,15 +154,20 @@ impl<'a> AnyValueBuffer<'a> {
         Some(())
     }
 
-    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
-        self.add(val.clone()).ok_or_else(|| {
-            polars_err!(
-                ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
-                have the same schema or consider increasing `infer_schema_length`\n\
-                \n\
-                it might also be that a value overflows the data-type's capacity", val, val.dtype()
-            )
-        })
+    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>, strict: bool) -> PolarsResult<()> {
+        if self.add(val.clone()).is_some() {
+            return Ok(());
+        }
+        polars_ensure!(
+            !strict,
+            ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
+            have the same schema or consider increasing `infer_schema_length`\n\
+            \n\
+            it might also be that a value overflows the data-type's capacity", val, val.dtype()
+        );
+
+        self.add(AnyValue::Null).unwrap();
+        Ok(())
     }
 
     pub fn reset(&mut self, capacity: usize, strict: bool) -> PolarsResult<Series> {

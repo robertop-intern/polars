@@ -1191,7 +1191,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
-    def cast_time_unit(self, time_unit: TimeUnit) -> Series:
+    def cast_time_unit(self, time_unit: TimeUnit, *, strict: bool = True) -> Series:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
@@ -1199,6 +1199,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         ----------
         time_unit : {'ns', 'us', 'ms'}
             Unit of time for the `Datetime` Series.
+        strict
+            Whether a value that does not fit in `time_unit` (overflows) raises.
+            if set to `False`, such values become `null` instead of raising.
 
         Examples
         --------

@@ -1838,7 +1838,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
-    def cast_time_unit(self, time_unit: TimeUnit) -> Expr:
+    def cast_time_unit(self, time_unit: TimeUnit, *, strict: bool = True) -> Expr:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
@@ -1848,6 +1848,9 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         ----------
         time_unit : {'ns', 'us', 'ms'}
             Time unit for the `Datetime` expression.
+        strict
+            Whether a value that does not fit in `time_unit` (overflows) raises.
+            if set to `False`, such values become `null` instead of raising.
 
         Examples
         --------
@@ -1877,7 +1880,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         │ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 ┆ 2001-01-03 00:00:00 │
         └─────────────────────┴─────────────────────┴─────────────────────┘
         """
-        return wrap_expr(self._pyexpr.dt_cast_time_unit(time_unit))
+        return wrap_expr(self._pyexpr.dt_cast_time_unit(time_unit, strict))
 
     def convert_time_zone(self, time_zone: str) -> Expr:
         """

@@ -54,7 +54,10 @@ pub enum IRTemporalFunction {
         fractional: bool,
     },
     ToString(String),
-    CastTimeUnit(TimeUnit),
+    CastTimeUnit {
+        time_unit: TimeUnit,
+        options: CastOptions,
+    },
     #[cfg(feature = "timezones")]
     ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
@@ -105,7 +108,7 @@ impl IRTemporalFunction {
                 }
             },
             ToString(_) => mapper.with_dtype(DataType::String),
-            CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
+            CastTimeUnit { time_unit: tu, .. } => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 dtype => polars_bail!(ComputeError: "expected duration or datetime, got {dtype}"),
@@ -178,7 +181,7 @@ impl IRTemporalFunction {
             | T::Nanosecond
             | T::ToString(_)
             | T::TimeStamp(_)
-            | T::CastTimeUnit(_) => FunctionOptions::elementwise(),
+            | T::CastTimeUnit { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-duration")]
             T::TotalDays { .. }
             | T::TotalHours { .. }
@@ -255,7 +258,7 @@ impl Display for IRTemporalFunction {
             ToString(_) => "to_string",
             #[cfg(feature = "timezones")]
             ConvertTimeZone(_) => "convert_time_zone",
-            CastTimeUnit(_) => "cast_time_unit",
+            CastTimeUnit { .. } => "cast_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate => "truncate",
             #[cfg(feature = "offset_by")]

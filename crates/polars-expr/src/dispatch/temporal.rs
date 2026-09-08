@@ -63,7 +63,9 @@ pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn Colum
         TimeStamp(tu) => map!(datetime::timestamp, tu),
         #[cfg(feature = "timezones")]
         ConvertTimeZone(tz) => map!(datetime::convert_time_zone, &tz),
-        CastTimeUnit(tu) => map!(datetime::cast_time_unit, tu),
+        CastTimeUnit { time_unit, options } => {
+            map!(datetime::cast_time_unit, time_unit, options)
+        },
         Truncate => {
             map_as_slice!(datetime::truncate)
         },
