@@ -1020,7 +1020,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "asof_join")]
-    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
+    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness, nulls_equal))]
     fn join_asof(
         &self,
         other: Self,
@@ -1037,6 +1037,7 @@ impl PyLazyFrame {
         coalesce: bool,
         allow_eq: bool,
         check_sortedness: bool,
+        nulls_equal: bool,
     ) -> PyResult<Self> {
         let coalesce = if coalesce {
             JoinCoalesce::CoalesceColumns
@@ -1055,6 +1056,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .coalesce(coalesce)
+            .join_nulls(nulls_equal)
             .how(JoinType::AsOf(Box::new(AsOfOptions {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_pl_smallstr),
