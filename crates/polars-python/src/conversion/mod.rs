@@ -26,8 +26,9 @@ use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::materialize_dyn_int;
-use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
+use polars_io::parquet::write::ParquetStatisticsConfig;
+use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
@@ -649,6 +650,29 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<StatisticsOptions> {
         }
 
         Ok(Wrap(statistics))
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ParquetStatisticsConfig> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(list) = ob.cast::<PyList>() {
+            let per_column = list
+                .iter()
+                .map(|item| {
+                    let (name, statistics) =
+                        item.extract::<(PlSmallStr, Wrap<StatisticsOptions>)>()?;
+                    Ok((name, statistics.0))
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            return Ok(Wrap(ParquetStatisticsConfig::PerColumn(per_column)));
+        }
+
+        Ok(Wrap(ParquetStatisticsConfig::Global(
+            ob.extract::<Wrap<StatisticsOptions>>()?.0,
+        )))
     }
 }
 

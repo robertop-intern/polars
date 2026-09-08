@@ -14,7 +14,7 @@ use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
-use polars_parquet::arrow::write::StatisticsOptions;
+use polars_io::parquet::write::ParquetStatisticsConfig;
 use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::dsl_resolver::DslResolver;
 use polars_plan::plans::{AExpr, HintIR, IR, Sorted};
@@ -714,7 +714,7 @@ impl PyLazyFrame {
         sink_options: PySinkOptions,
         compression: &str,
         compression_level: Option<i32>,
-        statistics: Wrap<StatisticsOptions>,
+        statistics: Wrap<ParquetStatisticsConfig>,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,

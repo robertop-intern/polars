@@ -112,7 +112,9 @@ fn init_files() {
                         #[cfg(feature = "parquet")]
                         {
                             ParquetWriter::new(f)
-                                .with_statistics(StatisticsOptions::full())
+                                .with_statistics(ParquetStatisticsConfig::Global(
+                                    StatisticsOptions::full(),
+                                ))
                                 .finish(&mut df)
                                 .unwrap();
                         }

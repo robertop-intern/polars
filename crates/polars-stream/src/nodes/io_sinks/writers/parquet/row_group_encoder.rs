@@ -7,10 +7,11 @@ use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
+use polars_io::prelude::FullWriteOptions;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    CompressedPage, Compressor, Encoding, SchemaDescriptor, WriteOptions, array_to_columns,
+    CompressedPage, Compressor, Encoding, SchemaDescriptor, array_to_columns,
 };
 use polars_utils::UnitVec;
 
@@ -24,7 +25,7 @@ pub struct RowGroupEncoder {
     /// Note: We assume it is checked in IR that this will match the schema of incoming morsels.
     pub arrow_schema: ArrowSchemaRef,
     pub schema_descriptor: Arc<SchemaDescriptor>,
-    pub write_options: WriteOptions,
+    pub write_options: FullWriteOptions,
     pub encodings: Buffer<Vec<Encoding>>,
     pub num_leaf_columns: usize,
 }
@@ -45,6 +46,7 @@ impl RowGroupEncoder {
             let arrow_schema = Arc::clone(&arrow_schema);
             let schema_descriptor = Arc::clone(&schema_descriptor);
             let encodings = Buffer::clone(&encodings);
+            let write_options = write_options.clone();
 
             let row_group_encode_handle =
                 executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
@@ -59,6 +61,7 @@ impl RowGroupEncoder {
                             let arrow_schema = Arc::clone(&arrow_schema);
                             let schema_descriptor = Arc::clone(&schema_descriptor);
                             let encodings = Buffer::clone(&encodings);
+                            let write_options = write_options.for_column(i);
 
                             async move {
                                 let parquet_type = &schema_descriptor.fields()[i];

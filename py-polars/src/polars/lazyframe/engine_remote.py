@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         IpcCompression,
         ParquetCompression,
         ParquetMetadata,
+        ParquetStatistics,
         PlanTypePreference,
         PostOptCallback,
         StorageOptionsDict,
@@ -236,7 +237,7 @@ class RemoteEngine(Engine):
         *,
         compression: ParquetCompression,
         compression_level: int | None,
-        statistics: bool | str | dict[str, bool],
+        statistics: ParquetStatistics,
         row_group_size: int | None,
         data_page_size: int | None,
         maintain_order: bool,
@@ -261,7 +262,9 @@ class RemoteEngine(Engine):
             self._sink_uri(path),
             compression=compression,
             compression_level=compression_level,
-            statistics=statistics,
+            # TODO: `polars_cloud` does not accept the per-column form yet, but it only
+            # forwards the value back into `LazyFrame.sink_parquet`.
+            statistics=statistics,  # type: ignore[arg-type]
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             maintain_order=maintain_order,

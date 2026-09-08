@@ -7,9 +7,9 @@ use polars_async::primitives::connector;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::prelude::{ParquetWriteOptions, get_encodings};
+use polars_io::prelude::{FullWriteOptions, ParquetWriteOptions, get_encodings};
 use polars_parquet::write::{
-    CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
+    CompressedPage, Encoding, SchemaDescriptor, Version, to_parquet_schema,
 };
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
@@ -35,6 +35,7 @@ pub struct ParquetWriterStarter {
 pub struct InitializedState {
     encodings: Buffer<Vec<Encoding>>,
     schema_descriptor: Arc<SchemaDescriptor>,
+    write_options: FullWriteOptions,
 }
 
 struct EncodedRowGroup {
@@ -82,16 +83,25 @@ impl FileWriterStarter for ParquetWriterStarter {
         let InitializedState {
             encodings,
             schema_descriptor,
+            write_options,
         } = {
             let mut initialized_state = self.initialized_state.lock().unwrap();
 
             if initialized_state.is_none() {
                 let schema_descriptor = Arc::new(to_parquet_schema(&self.arrow_schema)?);
                 let encodings = get_encodings(&self.arrow_schema);
+                let write_options = FullWriteOptions::try_new(
+                    self.options.compression.into(),
+                    Version::V1,
+                    self.options.data_page_size,
+                    &self.options.statistics,
+                    &self.arrow_schema,
+                )?;
 
                 *initialized_state = Some(InitializedState {
                     encodings,
                     schema_descriptor,
+                    write_options,
                 })
             };
 
@@ -103,13 +113,6 @@ impl FileWriterStarter for ParquetWriterStarter {
         >(num_pipelines.get());
 
         let key_value_metadata = self.options.key_value_metadata.clone();
-        let write_options = WriteOptions {
-            statistics: self.options.statistics,
-            compression: self.options.compression.into(),
-            version: Version::V1,
-            data_page_size: self.options.data_page_size,
-        };
-
         let arrow_schema = Arc::clone(&self.arrow_schema);
         let num_leaf_columns = schema_descriptor.columns().len();
 
@@ -120,7 +123,7 @@ impl FileWriterStarter for ParquetWriterStarter {
                     encoded_row_group_rx,
                     arrow_schema,
                     schema_descriptor: Arc::clone(&schema_descriptor),
-                    write_options,
+                    write_options: write_options.clone(),
                     encodings: Buffer::clone(&encodings),
                     key_value_metadata,
                     num_leaf_columns,

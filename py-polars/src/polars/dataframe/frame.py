@@ -177,6 +177,7 @@ if TYPE_CHECKING:
         Orientation,
         ParquetCompression,
         ParquetMetadata,
+        ParquetStatistics,
         PivotAgg,
         PolarsDataType,
         PythonDataType,
@@ -4106,7 +4107,7 @@ class DataFrame:
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
-        statistics: bool | str | dict[str, bool] = True,
+        statistics: ParquetStatistics = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
@@ -4159,6 +4160,11 @@ class DataFrame:
               - "max": column maximum value (default: `True`)
               - "distinct_count": number of unique column values (default: `False`)
               - "null_count": number of null values in column (default: `True`)
+            - A sequence, to select statistics per column. Columns that are not
+              named get no statistics at all. An entry is either a column name,
+              which enables the default set for that column, or a
+              `(column name, statistics)` tuple, where the statistics are any of
+              the specifications above. Cannot be combined with `use_pyarrow`.
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
         data_page_size
@@ -4265,7 +4271,7 @@ class DataFrame:
                 file = normalize_filepath(file)
 
         if use_pyarrow:
-            if statistics == "full" or isinstance(statistics, dict):
+            if not isinstance(statistics, bool):
                 msg = "write_parquet with `use_pyarrow=True` allows only boolean values for `statistics`"
                 raise ValueError(msg)
             if metadata is not None:
