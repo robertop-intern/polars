@@ -585,6 +585,30 @@ def test_cast_time_units(
     assert dates.dt.cast_time_unit(time_unit).cast(int).to_list() == date_in_that_unit
 
 
+def test_cast_time_unit_ns_bounds() -> None:
+    # the outermost microsecond values that still fit in nanoseconds
+    dates = pl.Series(
+        [
+            datetime(1677, 9, 21, 0, 12, 43, 145225),
+            datetime(2262, 4, 11, 23, 47, 16, 854775),
+        ]
+    )
+
+    assert dates.dt.cast_time_unit("ns").to_list() == dates.to_list()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1677, 9, 21, 0, 12, 43, 145224),  # one us below the ns range
+        datetime(2262, 4, 11, 23, 47, 16, 854776),  # one us above the ns range
+    ],
+)
+def test_cast_time_unit_out_of_range(value: datetime) -> None:
+    with pytest.raises(InvalidOperationError, match="conversion from"):
+        pl.Series([value]).dt.cast_time_unit("ns")
+
+
 def test_epoch_matches_timestamp() -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 

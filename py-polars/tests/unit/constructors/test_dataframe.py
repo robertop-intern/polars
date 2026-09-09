@@ -10,7 +10,11 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import DataOrientationWarning, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    DataOrientationWarning,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -127,6 +131,18 @@ def test_df_init_from_series_strict() -> None:
     df = pl.DataFrame(s, schema=schema, strict=False)
     assert df["a"].to_list() == [None, 0, 1]
     assert df["a"].dtype == pl.UInt8
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1677, 9, 21, 0, 12, 43, 145224),  # one us below the ns range
+        datetime(2262, 4, 11, 23, 47, 16, 854776),  # one us above the ns range
+    ],
+)
+def test_df_init_rows_datetime_ns_out_of_range(value: datetime) -> None:
+    with pytest.raises(ComputeError, match="overflows"):
+        pl.DataFrame([[value]], schema={"t": pl.Datetime("ns")}, orient="row")
 
 
 # https://github.com/pola-rs/polars/issues/15471

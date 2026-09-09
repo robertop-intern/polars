@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
@@ -154,6 +155,18 @@ def test_series_init_pandas_timestamp_18127() -> None:
     result = pl.Series([pd.Timestamp("2000-01-01T00:00:00.123456789", tz="UTC")])
     # Note: time unit is not (yet) respected, it should be Datetime('ns', 'UTC').
     assert result.dtype == pl.Datetime("us", "UTC")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1677, 9, 21, 0, 12, 43, 145224),  # one us below the ns range
+        datetime(2262, 4, 11, 23, 47, 16, 854776),  # one us above the ns range
+    ],
+)
+def test_series_init_datetime_ns_out_of_range(value: datetime) -> None:
+    with pytest.raises(InvalidOperationError, match="conversion from"):
+        pl.Series([value], dtype=pl.Datetime("ns"))
 
 
 def test_series_init_np_2d_zero_zero_shape() -> None:
