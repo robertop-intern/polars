@@ -169,6 +169,16 @@ def test_series_init_datetime_ns_out_of_range(value: datetime) -> None:
         pl.Series([value], dtype=pl.Datetime("ns"))
 
 
+def test_series_init_datetime_ns_out_of_range_non_strict() -> None:
+    result = pl.Series(
+        [datetime(2000, 1, 1), datetime(1677, 9, 21, 0, 12, 43, 145224)],
+        dtype=pl.Datetime("ns"),
+        strict=False,
+    )
+
+    assert result.to_list() == [datetime(2000, 1, 1), None]
+
+
 def test_series_init_np_2d_zero_zero_shape() -> None:
     arr = np.array([]).reshape(0, 0)
     assert_series_equal(

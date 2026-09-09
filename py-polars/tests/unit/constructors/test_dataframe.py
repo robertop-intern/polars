@@ -145,6 +145,17 @@ def test_df_init_rows_datetime_ns_out_of_range(value: datetime) -> None:
         pl.DataFrame([[value]], schema={"t": pl.Datetime("ns")}, orient="row")
 
 
+def test_df_init_rows_datetime_ns_out_of_range_non_strict() -> None:
+    df = pl.DataFrame(
+        [[datetime(2000, 1, 1)], [datetime(1677, 9, 21, 0, 12, 43, 145224)]],
+        schema={"t": pl.Datetime("ns")},
+        orient="row",
+        strict=False,
+    )
+
+    assert df["t"].to_list() == [datetime(2000, 1, 1), None]
+
+
 # https://github.com/pola-rs/polars/issues/15471
 def test_df_init_rows_overrides_non_existing() -> None:
     df = pl.DataFrame([{"a": 1}], schema_overrides={"a": pl.Int8(), "b": pl.Boolean()})

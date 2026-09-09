@@ -609,6 +609,14 @@ def test_cast_time_unit_out_of_range(value: datetime) -> None:
         pl.Series([value]).dt.cast_time_unit("ns")
 
 
+def test_cast_time_unit_out_of_range_non_strict() -> None:
+    dates = pl.Series([datetime(2000, 1, 1), datetime(1677, 9, 21, 0, 12, 43, 145224)])
+
+    result = dates.dt.cast_time_unit("ns", strict=False)
+
+    assert result.to_list() == [datetime(2000, 1, 1), None]
+
+
 def test_epoch_matches_timestamp() -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
